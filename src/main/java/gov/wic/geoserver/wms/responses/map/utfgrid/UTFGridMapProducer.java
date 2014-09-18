@@ -32,9 +32,9 @@ public class UTFGridMapProducer implements GetMapOutputFormat {
 	}
 
 	@Override
-	public EncodeUTFGrid produceMap(WMSMapContent mapContent) throws ServiceException,
-			IOException {
-        return new EncodeUTFGrid(mapContent);
+	public EncodeUTFGrid produceMap(WMSMapContent mapContent)
+			throws ServiceException, IOException {
+		return new EncodeUTFGrid(mapContent);
 	}
 
 }

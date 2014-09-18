@@ -233,6 +233,7 @@ public class UTFGridWriter extends OutputStreamWriter {
 								linestr = new String(chars);
 								lineslist.set(y, linestr);
 							}
+						//lines and points need some work, right now too resolution dependent
 						} else if (LineString.class.equals(gtype)
 								|| Point.class.equals(gtype)
 								|| MultiLineString.class.equals(gtype)
