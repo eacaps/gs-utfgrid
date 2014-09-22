@@ -346,9 +346,9 @@ public class EncodeUTFGrid extends WebMap {
 				writer.write("{");// 'keys':['14'], 'data': {'14': {'NAME':
 									// 'United States Virgin Islands',
 									// 'POP2005': 111408}}, , 'grid':");
-
+				long t0 = System.currentTimeMillis();
 				writer.writeFeatures(fColl, ftsList);
-
+System.out.println("elapsed: "+(System.currentTimeMillis() - t0));
 				writer.write("}");
 				// writer.write("</map>\n");
 

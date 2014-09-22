@@ -133,24 +133,6 @@ public class UTFGridWriter extends OutputStreamWriter {
 				}
 				lineslist.add(lb.toString());
 			}
-
-			// iterates through the single features
-			iter = fColl.features();
-			while (iter.hasNext()) {
-				ft = iter.next();
-				Geometry geo = (Geometry) ft.getDefaultGeometry();
-
-				if (!clippingBox.contains(geo)) {
-					try {
-						Geometry clippedGeometry = clippingBox
-								.intersection(geo);
-						ft.setDefaultGeometry(clippedGeometry);
-					} catch (Throwable e) {
-						// ignore and use the original geo
-					}
-				}
-				ft = null;
-			}
 			Coordinate[] coordinates = clippingBox.getCoordinates();
 			System.out.println(coordinates[0]);
 			Coordinate bl = coordinates[0];
@@ -166,6 +148,7 @@ public class UTFGridWriter extends OutputStreamWriter {
 			//reversed loop order because the above call should only be done once.
 			//TODO: might need to turn that into a separate iteration, but havent tested yet.
 			while (iterator.hasNext()) {
+				SimpleFeature sf = iterator.next();
 				// for each line in the output
 				for (int y = 0; y < lines; y++) {
 					double yval = tl.y - (ystep * y);
@@ -175,26 +158,13 @@ public class UTFGridWriter extends OutputStreamWriter {
 					// create a line to run the intersection against
 					LineString line = new GeometryFactory()
 							.createLineString(linecoords);
-					SimpleFeature sf = iterator.next();
 					Geometry geom = (Geometry) sf.getDefaultGeometry();
 					Geometry intersection = line.intersection(geom);
+					String id = sf.getID();
 					if (!intersection.isEmpty()) {
-						String id = sf.getID();
 						UTFEntry entry = entries.get(id);
 						if (entry == null) {
-							entry = new UTFEntry(val++);
-							HashMap<Object, Object> map = entry.getMap();
-							Collection<Property> properties = sf
-									.getProperties();
-							for (Property prop : properties) {
-								PropertyType type = prop.getType();
-								Name name = prop.getName();
-								String namestr = name.toString();
-								Object valobj = prop.getValue();
-								String valstr = valobj.toString();
-								if (!(type instanceof GeometryType))
-									map.put(namestr, valstr);
-							}
+							entry = createUtfEntry(sf, val);
 							entries.put(id, entry);
 							orderedentrylist.add(entry);
 						}
@@ -207,30 +177,9 @@ public class UTFGridWriter extends OutputStreamWriter {
 									.getCoordinates();
 							int processedcoords = 0;
 							while (processedcoords < icoords.length) {
-								double startpos = 0;
-								double endpos = -1;
-								if (icoords.length - processedcoords > 1) {
-									Coordinate ileft = icoords[processedcoords++];
-									Coordinate iright = icoords[processedcoords++];
-									double sdiff = ileft.x - left.x;
-									startpos = sdiff / xstep;
-									double ediff = iright.x - left.x;
-									endpos = ediff / xstep;
-								} else {
-									Coordinate ileft = icoords[processedcoords++];
-									double sdiff = ileft.x - left.x;
-									startpos = sdiff / xstep;
-									endpos = startpos;
-								}
-								// System.out.println("spos: "+startpos+" epos: "+endpos);
-								String linestr = lineslist.get(y);
-								char[] chars = linestr.toCharArray();
-								for (int c = (int) startpos; c <= endpos; c++) {
-									if (c < linelength)
-										chars[c] = this.getUTFChar(entry
-												.getVal());
-								}
-								linestr = new String(chars);
+								String linestr = getLineStr(linelength,
+										lineslist, xstep, y, left, entry,
+										icoords, processedcoords);
 								lineslist.set(y, linestr);
 							}
 						//lines and points need some work, right now too resolution dependent
@@ -238,19 +187,9 @@ public class UTFGridWriter extends OutputStreamWriter {
 								|| Point.class.equals(gtype)
 								|| MultiLineString.class.equals(gtype)
 								|| MultiPoint.class.equals(gtype)) {
-							Coordinate[] icoords = intersection
-									.getCoordinates();
-							String linestr = lineslist.get(y);
-							char[] chars = linestr.toCharArray();
-							for (Coordinate coord : icoords) {
-								double sdiff = coord.x - left.x;
-								double pos = sdiff / xstep;
-								if (pos < linelength) {
-									chars[(int) pos] = this.getUTFChar(entry
-											.getVal());
-								}
-							}
-							linestr = new String(chars);
+							String linestr = getLineStringForPoint(linelength,
+									lineslist, xstep, y, left, intersection,
+									entry);
 							lineslist.set(y, linestr);
 						} else {
 							// wtf mate
@@ -298,7 +237,6 @@ public class UTFGridWriter extends OutputStreamWriter {
 			this.write("\"grid\":");
 			this.write("[");
 			for (int x = 0; x < lines; x++) {
-				StringBuffer lb = new StringBuffer("");
 				StringBuffer sb = new StringBuffer("");
 				if (x != 0) {
 					sb.append(",");
@@ -315,7 +253,8 @@ public class UTFGridWriter extends OutputStreamWriter {
 
 			LOGGER.fine("encoded " + featureType.getTypeName());
 		} catch (NoSuchElementException ex) {
-			throw new DataSourceException(ex.getMessage(), ex);
+			//throw new DataSourceException(ex.getMessage(), ex);
+			ex.printStackTrace();
 		} finally {
 			if (iter != null) {
 				// make sure we always close
@@ -323,6 +262,72 @@ public class UTFGridWriter extends OutputStreamWriter {
 			}
 		}
 
+	}
+
+	private String getLineStringForPoint(int linelength,
+			ArrayList<String> lineslist, double xstep, int y, Coordinate left,
+			Geometry intersection, UTFEntry entry) {
+		Coordinate[] icoords = intersection
+				.getCoordinates();
+		String linestr = lineslist.get(y);
+		char[] chars = linestr.toCharArray();
+		for (Coordinate coord : icoords) {
+			double sdiff = coord.x - left.x;
+			double pos = sdiff / xstep;
+			if (pos < linelength) {
+				chars[(int) pos] = this.getUTFChar(entry
+						.getVal());
+			}
+		}
+		linestr = new String(chars);
+		return linestr;
+	}
+
+	private String getLineStr(int linelength, ArrayList<String> lineslist,
+			double xstep, int y, Coordinate left, UTFEntry entry,
+			Coordinate[] icoords, int processedcoords) {
+		double startpos = 0;
+		double endpos = -1;
+		if (icoords.length - processedcoords > 1) {
+			Coordinate ileft = icoords[processedcoords++];
+			Coordinate iright = icoords[processedcoords++];
+			double sdiff = ileft.x - left.x;
+			startpos = sdiff / xstep;
+			double ediff = iright.x - left.x;
+			endpos = ediff / xstep;
+		} else {
+			Coordinate ileft = icoords[processedcoords++];
+			double sdiff = ileft.x - left.x;
+			startpos = sdiff / xstep;
+			endpos = startpos;
+		}
+		// System.out.println("spos: "+startpos+" epos: "+endpos);
+		String linestr = lineslist.get(y);
+		char[] chars = linestr.toCharArray();
+		for (int c = (int) startpos; c <= endpos; c++) {
+			if (c < linelength)
+				chars[c] = this.getUTFChar(entry
+						.getVal());
+		}
+		linestr = new String(chars);
+		return linestr;
+	}
+	
+	private UTFEntry createUtfEntry(SimpleFeature sf, int val) {
+		UTFEntry entry = new UTFEntry(val);
+		HashMap<Object, Object> map = entry.getMap();
+		Collection<Property> properties = sf
+				.getProperties();
+		for (Property prop : properties) {
+			PropertyType type = prop.getType();
+			Name name = prop.getName();
+			String namestr = name.toString();
+			Object valobj = prop.getValue();
+			String valstr = valobj.toString();
+			if (!(type instanceof GeometryType))
+				map.put(namestr, valstr);
+		}
+		return entry;
 	}
 
 	private char getUTFChar(int val) {
